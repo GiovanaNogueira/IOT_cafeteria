@@ -10,7 +10,10 @@
 #include <HX711.h>
 #include <GFButton.h>
 #include <ArduinoJson.h>
+#include <Ultrasonic.h>
 
+#define pino_trigger 41
+#define pino_echo 42
 
 U8G2_FOR_ADAFRUIT_GFX fontes; 
 GxEPD2_290_T94_V2 modeloTela(10, 14, 15, 16); 
@@ -23,13 +26,14 @@ MFRC522 rfid(46, 17);
 MFRC522::MIFARE_Key chaveA =
 {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
 
-// GFButton up(1);
-// GFButton down(2);
-GFButton left(3);
-GFButton right(4);
-// GFButton press(5);
+Ultrasonic ultrasonic(pino_trigger, pino_echo);
+
+GFButton left(3); //azul
+GFButton right(4); // vermelho
 
 JsonDocument produto;
+JsonDocument user; 
+JsonDocument produtos;
 
 
 HX711 balanca;
@@ -75,12 +79,24 @@ void usuarioInvalido(){
   tela.display(true);
 }
 
+void verificaUser(String rfid){
+  JsonDocument msg;
+  msg["rfid"] = rfid;
+  String textoJson;
+  serializeJson(msg, textoJson);
+  mqtt.publish("verifica_usuario_cafe", textoJson);
+}
+
 void telaProdutos(){
+
+  String nomeUsuario = user["name"];
+  float saldoUsuario = user["balance"];
+  String saldoFormatado = String(saldoUsuario, 2); 
   tela.fillScreen(GxEPD_WHITE); 
   fontes.setFont( u8g2_font_helvR10_te );
   fontes.setFontMode(1);
   fontes.setCursor(160, 20);
-  fontes.print("Giovana: R$10,00");
+  fontes.print(nomeUsuario + ": R$" + saldoFormatado);
 
 
   fontes.setFont( u8g2_font_helvB14_te );
@@ -130,7 +146,8 @@ void telaSaldoFinal(float preco){
   fontes.setCursor(90, 50);
   fontes.print("Saldo atual:");
 
-  float saldoAtual = 10.00 - preco;
+  float saldoUser = user["balance"];
+  float saldoAtual = saldoUser - preco;
 
   fontes.setFont( u8g2_font_helvR14_te );
   fontes.setFontMode(1);
@@ -176,9 +193,18 @@ void finalizarCompra(float pesoMedido) {
   produto["total"] = produto["preco"].as<float>() * (pesoMedido / 100.0);
   produto["peso"] = pesoMedido;
   float total = produto["total"];
+  float saldoUsuario = user["balance"];
+
+  JsonDocument msg;
+  msg["id_user"] = user["id"];
+  msg["id_produto"] = produto["id"];
+  msg["peso"] = pesoMedido;
+  msg["total"] = total;
+  msg["saldoAtual"] = saldoUsuario - total;
+
   telaSaldoFinal(total);
   String textoJson;
-  serializeJson(produto, textoJson);
+  serializeJson(msg, textoJson);
   mqtt.publish("cafeteria_iot", textoJson);
   produto.clear();
   comecaPesagem = false;
@@ -270,16 +296,47 @@ void reconectarMQTT() {
     Serial.println(" conectado!"); 
     
     mqtt.subscribe("cafeteria_iot");  
+    mqtt.subscribe("verifica_usuario_cafe");  
+    mqtt.subscribe("retorna_usuario_cafe");  
+    mqtt.subscribe("retorna_produtos_cafe");  
   } 
+}
+
+void pegaProdutos(){
+  mqtt.publish("pega_produtos_cafe", "");
 }
 
 void recebeuMensagem(String topico, String conteudo) { 
   Serial.println(topico + ": " + conteudo); 
+
+
+  if(topico == "retorna_usuario_cafe"){
+    deserializeJson(user, conteudo);
+
+    int id = user["id"];
+    if(id > 0){
+      usuarioValido = true;
+      roda = false;
+      telaProdutos();
+    }else{
+      usuarioValido = false;
+      usuarioInvalido();
+      roda = false;
+      finalizou = true;
+    }
+  }else if(topico == "retorna_produtos_cafe"){
+    deserializeJson(produtos, conteudo);
+    Serial.println("Produtos recebidos:");
+    serializeJson(produtos, Serial); 
+    // tratar produtos
+  }
 }
 
 
 void botaoPressionadoLeft (GFButton& botaoDoEvento) {
   Serial.println("Botão esquerdo foi pressionado!");
+
+  //selecionar produto da lista produtos
 
   if(produto["id"].isNull()){
     produto["id"] = 1;
@@ -321,7 +378,7 @@ void botaoPressionadoRight (GFButton& botaoDoEvento) {
 void setup() {
   Serial.begin(115200); delay(500);
 
-  reconectarWiFi(); 
+  reconectarWiFi();  
   conexaoSegura.setCACert(certificado1);
 
   mqtt.begin("mqtt.janks.dev.br", 8883, conexaoSegura); 
@@ -340,21 +397,35 @@ void setup() {
   SPI.begin();
   rfid.PCD_Init();
 
-  balanca.begin(6, 7);
-  balanca.set_scale(478);
-  balanca.tare(5);
+  // balanca.begin(6, 7);
+  // balanca.set_scale(478);
+  // balanca.tare(5);
 
   left.setPressHandler(botaoPressionadoLeft);
   left.setReleaseHandler(botaoSolto);
   right.setPressHandler(botaoPressionadoRight);
   right.setReleaseHandler(botaoSolto);
+
+  Serial.println("Setup completo.");
 }
 
 void loop() {
   reconectarWiFi(); 
   reconectarMQTT(); 
   mqtt.loop();
+  // left.process();
+  // right.process();
 
+  // float peso = balanca.get_units(1);
+  // Serial.print("peso: ");
+  // Serial.print(peso);
+
+  // float cmMsec;
+  // long microsec = ultrasonic.timing();
+  // cmMsec = ultrasonic.convert(microsec, Ultrasonic::CM);
+
+  // Serial.print("Distancia em cm: ");
+  // Serial.print(cmMsec);
 
   unsigned long instanteAtual = millis(); 
   if(roda){
@@ -377,14 +448,15 @@ void loop() {
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()){
     String id = lerRFID();
     Serial.println("UID: " + id);
+    verificaUser(id);
 
-    if(id == "17 28 7C 34"){
-      usuarioValido = true;
-      telaProdutos();
-    }else{
-      usuarioValido = false;
-      usuarioInvalido();
-    }
+    // if(id == "17 28 7C 34"){
+    //   usuarioValido = true;
+    //   telaProdutos();
+    // }else{
+    //   usuarioValido = false;
+    //   usuarioInvalido();
+    // }
 
     String texto = lerTextoDoBloco(6);
     Serial.println("Bloco 6: " + texto);
