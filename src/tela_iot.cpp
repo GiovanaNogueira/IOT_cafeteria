@@ -172,3 +172,24 @@ int telaPesagem(float peso, float preco){
     tela.display(true);
     return 0;
 }
+
+void telaCadastraRFID(){
+    tela.fillScreen(GxEPD_WHITE); 
+    fontes.setFont( u8g2_font_helvB14_te );
+    fontes.setFontMode(1);
+    fontes.setCursor(20, 70);
+    fontes.print("Aproxime o novo");
+    fontes.setCursor(70, 90);
+    fontes.print("cartão");
+    tela.display(true);
+
+}
+
+void telaCadastroRealizado(){
+    tela.fillScreen(GxEPD_WHITE); 
+    fontes.setFont( u8g2_font_helvB14_te );
+    fontes.setFontMode(1);
+    fontes.setCursor(50, 70);
+    fontes.print("Cadastro realizado!");
+    tela.display(true);
+}

@@ -13,15 +13,15 @@
 #include <Ultrasonic.h>
 //#include <ESP32Encoder.h>
 
-#define PINO_BOTAO_RIGHT 4
-#define PINO_BOTAO_LEFT 5
-#define CONTATO 8
+#define PINO_BOTAO_RIGHT 5
+#define PINO_BOTAO_LEFT 4
+// #define CONTATO 8
 #define VALV_PINO 21
 #define SOL_PIN1 39
 #define SOL_PIN2 40
 #define PINO_TRIGGER1 42
 #define PINO_ECHO1 41
-#define PINO_TRIGGER2 1
+#define PINO_TRIGGER2 1 
 #define PINO_ECHO2 2
 
 // unsigned long anterior = 0;
@@ -42,10 +42,10 @@ MFRC522 rfid(46, 17);
 MFRC522::MIFARE_Key chaveA = {{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
 
 Ultrasonic ultrasonicAmendoim(PINO_TRIGGER1, PINO_ECHO1);
-Ultrasonic ultrasonicMM(PINO_TRIGGER2, PINO_ECHO2);
+// Ultrasonic ultrasonicMM(PINO_TRIGGER2, PINO_ECHO2);
 
 GFButton left(PINO_BOTAO_LEFT); //azul
-GFButton right(PINO_BOTAO_RIGHT); // amarelo
+// GFButton right(PINO_BOTAO_RIGHT); // amarelo
 //ESP32Encoder encoder;
 
 JsonDocument produto;
@@ -57,6 +57,8 @@ HX711 balanca;
 bool usuarioValido = false;
 bool fim = false;
 bool comecaPesagem = false;
+
+bool modoCadastroRFID = false;
 
 bool travar = true;
 
@@ -117,8 +119,8 @@ void reconectarMQTT() {
   if (!mqtt.connected()) { 
     Serial.print("Conectando MQTT..."); 
     while(!mqtt.connected()) { 
-      mqtt.connect("cafeteria_iot", "aula", "zowmad-tavQez"); 
-      Serial.print("."); 
+      mqtt.connect("cafeteria_iot22", "aula", "zowmad-tavQez"); 
+      Serial.print(".m"); 
       delay(1000); 
     } 
     Serial.println(" conectado!"); 
@@ -134,6 +136,14 @@ void pegaProdutos(){
   mqtt.publish("pega_produtos_cafe", "");
 }
 
+void enviarNovoRFID(String id) {
+  JsonDocument msg;
+  msg["rfid"] = id;
+  String txt;
+  serializeJson(msg, txt);
+  mqtt.publish("novo_rfid", txt);
+}
+
 float lerDistanciaMedia(Ultrasonic &sensor, int nAmostras = 5) {
   long soma = 0;
 
@@ -144,9 +154,9 @@ float lerDistanciaMedia(Ultrasonic &sensor, int nAmostras = 5) {
   }
 
   float media = soma / (float)nAmostras;
-  Serial.print("Distância média estoque: ");
-  Serial.print(media);
-  Serial.println(" cm");
+  // Serial.print("Distância média estoque: ");
+  // Serial.print(media);
+  // Serial.println(" cm");
 
   return media;
 }
@@ -285,9 +295,9 @@ void fecharSnack (GFButton& botaoDoEvento) {
   }
 }
 
-void transicao (GFButton& botaoDoEvento){
-  botaoDoEvento.setReleaseHandler(fecharSnack);
-}
+// void transicao (GFButton& botaoDoEvento){
+//   botaoDoEvento.setReleaseHandler(fecharSnack);
+// }
 
 void do_nothing(GFButton& botaoDoEvento){
   return;
@@ -295,7 +305,7 @@ void do_nothing(GFButton& botaoDoEvento){
 
 void selecionaProduto (GFButton& botaoDoEvento) {
   left.setPressHandler(do_nothing);
-  right.setPressHandler(do_nothing);
+  // right.setPressHandler(do_nothing);
 
   bool isLeft = (&botaoDoEvento == &left);
   int  id_produto_int = isLeft ? 1 : 2;
@@ -305,7 +315,7 @@ void selecionaProduto (GFButton& botaoDoEvento) {
     Serial.println("Tentou selecionar produto sem estoque.");
     // volta os botões pro estado normal de seleção
     left.setPressHandler(selecionaProduto);
-    right.setPressHandler(selecionaProduto);
+    // right.setPressHandler(selecionaProduto);
     return;  // não segue pro abrirSnack
   }
   
@@ -331,7 +341,7 @@ void selecionaProduto (GFButton& botaoDoEvento) {
   String nome_produto = produto["nome"];
 
   botaoDoEvento.setPressHandler(abrirSnack);
-  botaoDoEvento.setReleaseHandler(transicao);
+  botaoDoEvento.setReleaseHandler(fecharSnack);
 
   String preco = produto["preco"];
   Serial.println("Produto selecionado: " + nome_produto + " - R$" + preco);
@@ -364,8 +374,8 @@ void finalizarCompra(float pesoMedido) {
 
   left.setPressHandler(selecionaProduto);
   left.setReleaseHandler(do_nothing);
-  right.setPressHandler(selecionaProduto);
-  right.setReleaseHandler(do_nothing); 
+  // right.setPressHandler(selecionaProduto);
+  // right.setReleaseHandler(do_nothing); 
 }
 
 /*
@@ -388,10 +398,12 @@ void setup() {
   mqtt.begin("mqtt.janks.dev.br", 8883, conexaoSegura); 
   mqtt.onMessage(recebeuMensagem); 
   mqtt.setKeepAlive(10); 
+  mqtt.setTimeout(10000);
   mqtt.setWill("tópico da desconexão", "conteúdo"); 
   reconectarMQTT(); 
 
   pegaProdutos();
+  Serial.println("Setup completo.");
   /*
   ESP32Encoder::useInternalWeakPullResistors = UP;  
   encoder.attachFullQuad(ENCODER_A, ENCODER_B);
@@ -400,12 +412,15 @@ void setup() {
 
   telaSetup();
 
+
+
   SPI.begin();
   rfid.PCD_Init();
 
   balanca.begin(6, 7);
   balanca.set_scale(478);
   balanca.tare(5);
+
 
   ESP32PWM::allocateTimer(0);
 	ESP32PWM::allocateTimer(1);
@@ -414,30 +429,42 @@ void setup() {
 	servo_amendoim.setPeriodHertz(50);    
 	servo_amendoim.attach(VALV_PINO, 500, 2400);
 
+
+
   delay(100);
   servo_amendoim.write(9);
 
-  left.setPressHandler(selecionaProduto);
 
-  right.setPressHandler(selecionaProduto);
+
+  left.setPressHandler(selecionaProduto);
+  // right.setPressHandler(selecionaProduto);
+
+
 
   pinMode(SOL_PIN1, OUTPUT);
   pinMode(SOL_PIN2, OUTPUT);
 
-  pinMode(CONTATO, INPUT_PULLUP);
-  janelaFechada = digitalRead(CONTATO) == HIGH;
+
+  // pinMode(CONTATO, INPUT_PULLUP);
+  // janelaFechada = digitalRead(CONTATO) == HIGH;
   janelaFechadaAnterior = janelaFechada;
+
+
 
   verificaEstoque(0);
   
   telaInicial();
+
+  Serial.println("Setup completo 123");
 }
 
 void loop() {
+  // Serial.println("Looping...");
   reconectarWiFi(); 
   reconectarMQTT();
   mqtt.loop();
 
+  // Serial.println("Looping 2");
   if(fim){
     // delay(5000);
     unsigned long instanteAtual = millis(); 
@@ -451,26 +478,51 @@ void loop() {
     }
   }
 
+  // Serial.println("Looping 3");
   //remover depois (apenas debug)
-  lerDistanciaMedia(ultrasonicAmendoim);
+  // lerDistanciaMedia(ultrasonicAmendoim);
 
-  
+  // Serial.println("Looping 4");
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()){ 
     String id = lerRFID(); 
     Serial.println("UID: " + id); 
-    String texto = lerTextoDoBloco(6); 
-    Serial.println("Bloco 6: " + texto); 
-      
+
+    // // 1) Se AINDA não estamos em modo cadastro
+    // if (!modoCadastroRFID) {
+    //   // Esse é o cartão ADMIN
+    //   if (id == "17 28 7C 40") {
+    //     Serial.println("Cartão administrador lido. Entre com o cartão a ser cadastrado...");
+    //     modoCadastroRFID = true;
+    //     telaCadastraRFID();
+    //   } else {
+    //     // Cartão normal: segue fluxo de usuário
+    //     String texto = lerTextoDoBloco(6); 
+    //     Serial.println("Bloco 6: " + texto); 
+    //     verificaUser(id);
+    //   }
+    // } 
+    // // 2) Já estamos em modo cadastro → esse cartão será cadastrado
+    // else {
+    //   Serial.println("Registrando novo RFID: " + id);
+    //   enviarNovoRFID(id);      // manda pro MQTT → Node-RED → formulário
+    //   modoCadastroRFID = false;
+    //   telaCadastroRealizado();
+    // }
+
     rfid.PICC_HaltA(); 
     rfid.PCD_StopCrypto1(); 
   }
 
+  // Serial.println("Looping 5");
+
   if (usuarioValido){
     left.process();
-    right.process();
+    // right.process();
 
+    // Serial.println("Looping 6");
     if(comecaPesagem){
       float peso = balanca.get_units(5);
+      Serial.println("peso sendo medido: " + String(peso));
       if (peso < 0) peso = 0;
       
       float preco100g = produto["preco_100g"];
@@ -493,8 +545,9 @@ void loop() {
     
     
   }
+  // Serial.println("Looping 7");
 
-  janelaFechada = digitalRead(CONTATO) == LOW;
+  // janelaFechada = digitalRead(CONTATO) == LOW;
   travar = esperandoJanelaAbrir && janelaFechada && !janelaFechadaAnterior; // travar janela se ela foi destravada (esperandoJanelaAbrir) e ela fechou depois de abrir (janelaFechada && !janelaFechadaAnterior)
     
   if (travar) {
@@ -503,7 +556,10 @@ void loop() {
     travar = false;
     telaInicial();
   }
+  // Serial.println("Looping 8");
   
   janelaFechadaAnterior = janelaFechada;
+
+  // Serial.println("Looping 9");
   
 }
