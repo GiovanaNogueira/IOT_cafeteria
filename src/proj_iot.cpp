@@ -154,9 +154,9 @@ float lerDistanciaMedia(Ultrasonic &sensor, int nAmostras = 5) {
   }
 
   float media = soma / (float)nAmostras;
-  // Serial.print("Distância média estoque: ");
-  // Serial.print(media);
-  // Serial.println(" cm");
+  Serial.print("Distância média estoque: ");
+  Serial.print(media);
+  Serial.println(" cm");
 
   return media;
 }
@@ -244,7 +244,7 @@ void recebeuMensagem(String topico, String conteudo) {
     deserializeJson(user, conteudo);
     int id = user["id"];
     usuarioValido = id != 0; 
-    fim = !usuarioValido;
+    // fim = !usuarioValido;
 
     if (usuarioValido){
       float balance = user["balance"].as<float>();
@@ -271,17 +271,6 @@ void recebeuMensagem(String topico, String conteudo) {
   }
 }
 
-void abrirSnack (GFButton& botaoDoEvento) { 
-  Serial.println("Liberando...");
-  if (usuarioValido){
-    for(; pos_amendoim <= 45; pos_amendoim++){
-      servo_amendoim.write(pos_amendoim);
-      delay(5);
-    }
-    comecaPesagem = true;
-  }
-}
-
 void fecharSnack (GFButton& botaoDoEvento) { 
   Serial.println("Parou!!!!");
   if (usuarioValido){
@@ -294,6 +283,22 @@ void fecharSnack (GFButton& botaoDoEvento) {
     instanteAnterior = millis();
   }
 }
+
+void abrirSnack (GFButton& botaoDoEvento) { 
+  Serial.println("Liberando...");
+  if (usuarioValido){
+    for(; pos_amendoim <= 45; pos_amendoim++){
+      Serial.println("Posição amendoim: " + String(pos_amendoim));
+      servo_amendoim.write(pos_amendoim);
+      delay(5);
+    }
+    comecaPesagem = true;
+    botaoDoEvento.setReleaseHandler(fecharSnack);
+  }
+
+}
+
+
 
 // void transicao (GFButton& botaoDoEvento){
 //   botaoDoEvento.setReleaseHandler(fecharSnack);
@@ -341,7 +346,6 @@ void selecionaProduto (GFButton& botaoDoEvento) {
   String nome_produto = produto["nome"];
 
   botaoDoEvento.setPressHandler(abrirSnack);
-  botaoDoEvento.setReleaseHandler(fecharSnack);
 
   String preco = produto["preco"];
   Serial.println("Produto selecionado: " + nome_produto + " - R$" + preco);
@@ -371,6 +375,10 @@ void finalizarCompra(float pesoMedido) {
   mqtt.publish("cafeteria_iot", textoJson);
   produto.clear();
   usuarioValido = false;
+
+  travar = true;
+  fim = true;
+  instanteAnterior = millis();
 
   left.setPressHandler(selecionaProduto);
   left.setReleaseHandler(do_nothing);
@@ -464,6 +472,8 @@ void loop() {
   reconectarMQTT();
   mqtt.loop();
 
+  // Serial.println("Fim: " + String(fim));
+
   // Serial.println("Looping 2");
   if(fim){
     // delay(5000);
@@ -480,7 +490,7 @@ void loop() {
 
   // Serial.println("Looping 3");
   //remover depois (apenas debug)
-  // lerDistanciaMedia(ultrasonicAmendoim);
+  lerDistanciaMedia(ultrasonicAmendoim);
 
   // Serial.println("Looping 4");
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()){ 
@@ -532,13 +542,16 @@ void loop() {
       // Serial.println("Produto em pesagem:");
       // serializeJson(produto, Serial); 
 
-      Serial.println("preco: " + String(preco));
+      // Serial.println("preco: " + String(preco));
 
       int termino = telaPesagem(peso, preco);
 
+      // Serial.println("termino: " + String(termino));
+      // Serial.println("fim: " + String(fim));
+
       if (fim || termino == 1) {
           finalizarCompra(peso);
-          fim = false;
+          // fim = false;
           comecaPesagem = false;
       }
     }
