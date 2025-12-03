@@ -15,7 +15,7 @@
 
 #define PINO_BOTAO_RIGHT 5
 #define PINO_BOTAO_LEFT 4
-// #define CONTATO 8
+#define CONTATO 8
 #define VALV_PINO 21
 #define SOL_PIN1 39
 #define SOL_PIN2 40
@@ -30,7 +30,7 @@ bool janelaFechada = true;
 bool janelaFechadaAnterior = false;
 
 Servo servo_amendoim;
-int pos_amendoim = 0;
+int pos_amendoim = 9;
 
 Servo servo_mm;
 int pos_mm = 0;
@@ -149,6 +149,8 @@ float lerDistanciaMedia(Ultrasonic &sensor, int nAmostras = 5) {
 
   for (int i = 0; i < nAmostras; i++) {
     unsigned int d = sensor.read();
+    Serial.print("Distância lida: ");
+    Serial.print(d);
     soma += d;
     delay(30);
   }
@@ -257,7 +259,11 @@ void recebeuMensagem(String topico, String conteudo) {
       }
       telaProdutos(user["name"], user["balance"]);
     }
-    else usuarioInvalido();
+    else {
+        usuarioInvalido();
+        fim = true;
+        instanteAnterior = millis();
+      }
   }
   else if (topico == "cafeteria_iot"){
     destravarJanela();
@@ -274,9 +280,9 @@ void recebeuMensagem(String topico, String conteudo) {
 void fecharSnack (GFButton& botaoDoEvento) { 
   Serial.println("Parou!!!!");
   if (usuarioValido){
-    for(; pos_amendoim > 8; pos_amendoim--){
+    for(; pos_amendoim > 7; pos_amendoim--){
       servo_amendoim.write(pos_amendoim);
-      delay(5);
+      delay(1);
     }
     delay(50);
     fim = true;
@@ -287,10 +293,9 @@ void fecharSnack (GFButton& botaoDoEvento) {
 void abrirSnack (GFButton& botaoDoEvento) { 
   Serial.println("Liberando...");
   if (usuarioValido){
-    for(; pos_amendoim <= 45; pos_amendoim++){
-      Serial.println("Posição amendoim: " + String(pos_amendoim));
+    for(; pos_amendoim <= 90; pos_amendoim++){
       servo_amendoim.write(pos_amendoim);
-      delay(5);
+      delay(1);
     }
     comecaPesagem = true;
     botaoDoEvento.setReleaseHandler(fecharSnack);
@@ -386,14 +391,6 @@ void finalizarCompra(float pesoMedido) {
   // right.setReleaseHandler(do_nothing); 
 }
 
-/*
-void navegacao(long pos){
-  if (pos <= 50){
-    atualiza_tela(pos)
-  }
-}
-*/
-
 
 void setup() {
   Serial.begin(115200); delay(500);
@@ -412,11 +409,6 @@ void setup() {
 
   pegaProdutos();
   Serial.println("Setup completo.");
-  /*
-  ESP32Encoder::useInternalWeakPullResistors = UP;  
-  encoder.attachFullQuad(ENCODER_A, ENCODER_B);
-  encoder.clearCount();
-  */
 
   telaSetup();
 
@@ -435,12 +427,12 @@ void setup() {
 	ESP32PWM::allocateTimer(2);
 	ESP32PWM::allocateTimer(3);
 	servo_amendoim.setPeriodHertz(50);    
-	servo_amendoim.attach(VALV_PINO, 500, 2400);
+	servo_amendoim.attach(VALV_PINO, 900, 2100);
 
 
 
   delay(100);
-  servo_amendoim.write(9);
+  servo_amendoim.write(8);
 
 
 
@@ -453,8 +445,8 @@ void setup() {
   pinMode(SOL_PIN2, OUTPUT);
 
 
-  // pinMode(CONTATO, INPUT_PULLUP);
-  // janelaFechada = digitalRead(CONTATO) == HIGH;
+  pinMode(CONTATO, INPUT_PULLUP);
+  janelaFechada = digitalRead(CONTATO) == HIGH;
   janelaFechadaAnterior = janelaFechada;
 
 
@@ -467,16 +459,11 @@ void setup() {
 }
 
 void loop() {
-  // Serial.println("Looping...");
   reconectarWiFi(); 
   reconectarMQTT();
   mqtt.loop();
 
-  // Serial.println("Fim: " + String(fim));
-
-  // Serial.println("Looping 2");
   if(fim){
-    // delay(5000);
     unsigned long instanteAtual = millis(); 
     if (instanteAtual > instanteAnterior + 5000) { 
       Serial.println("+5 segundo"); 
@@ -490,7 +477,7 @@ void loop() {
 
   // Serial.println("Looping 3");
   //remover depois (apenas debug)
-  lerDistanciaMedia(ultrasonicAmendoim);
+  // lerDistanciaMedia(ultrasonicAmendoim);
 
   // Serial.println("Looping 4");
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()){ 
@@ -532,6 +519,7 @@ void loop() {
     // Serial.println("Looping 6");
     if(comecaPesagem){
       float peso = balanca.get_units(5);
+      // float peso = 0;
       Serial.println("peso sendo medido: " + String(peso));
       if (peso < 0) peso = 0;
       
@@ -558,9 +546,8 @@ void loop() {
     
     
   }
-  // Serial.println("Looping 7");
 
-  // janelaFechada = digitalRead(CONTATO) == LOW;
+  janelaFechada = digitalRead(CONTATO) == LOW;
   travar = esperandoJanelaAbrir && janelaFechada && !janelaFechadaAnterior; // travar janela se ela foi destravada (esperandoJanelaAbrir) e ela fechou depois de abrir (janelaFechada && !janelaFechadaAnterior)
     
   if (travar) {
@@ -569,10 +556,7 @@ void loop() {
     travar = false;
     telaInicial();
   }
-  // Serial.println("Looping 8");
   
   janelaFechadaAnterior = janelaFechada;
-
-  // Serial.println("Looping 9");
   
 }
